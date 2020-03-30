@@ -10,6 +10,8 @@ black = "*"
 
 [packages]
 django = "*"
+requests = "*"
+lxml = "*"
 
 [requires]
 python_version = "3.8"
