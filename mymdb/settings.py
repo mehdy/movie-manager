@@ -83,6 +83,7 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
+        "OPTIONS": {"timeout": 20},
     }
 }
 
@@ -119,3 +120,7 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = None if DEBUG else os.path.join(BASE_DIR, "static")
+
+# OMDB API
+OMDB_API_URL = "http://www.omdbapi.com/"
+OMDB_API_KEY = get_env("OMDB_API_KEY", "key")

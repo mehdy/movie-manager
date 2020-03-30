@@ -1,6 +1,13 @@
-import os
+import json
+import logging
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
+from functools import partial
 
-from django.core.management.base import BaseCommand, CommandError
+import requests
+from django.conf import settings
+from django.core.management.base import BaseCommand
 
 from movies.models import Genre, Movie
 
@@ -11,10 +18,106 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("URL", type=str, help="The URL to look for movies")
 
+    def handle_verbosity(self, v):
+        self.logger = logging.getLogger(__name__)
+        level = [logging.FATAL, logging.ERROR, logging.INFO, logging.DEBUG][v]
+        logging.basicConfig(level=level)
+        self.logger.setLevel(level)
+
+    def fetch_url(self, url):
+        self.logger.info(f'Fetching data from "{url}..."')
+        resp = requests.get(url)
+        self.logger.info(f'GET "{url}" status code: {resp.status_code}')
+        self.logger.debug(f"response body: {resp.text}")
+        if not resp.ok:
+            self.logger.fatal(f'Failed to fetch data from "{url}": {resp.status_code}')
+            return exit(1)
+        return resp.text
+
+    def extract_movies_id(self, data):
+        self.logger.info(f"Extracting movies...")
+        jdata = json.loads(re.search(r"\((?P<data>\{.*\})\)", data).groupdict()["data"])
+
+        self.logger.info(f'Found {len(jdata["list"]["items"])} titles')
+        return list(map(lambda movie: movie["const"], jdata["list"]["items"]))
+
+    def fetch_movie(self, id):
+        self.logger.info(f"Fetching movie {id}...")
+        resp = requests.get(
+            settings.OMDB_API_URL, params={"apikey": settings.OMDB_API_KEY, "i": id}
+        )
+        self.logger.debug(f'GET "{id}" status code: {resp.status_code}')
+        self.logger.debug(f"response body: {resp.json()}")
+        resp.raise_for_status()
+        data = resp.json()
+
+        if data["Response"] != "True":
+            self.logger.error(f'OMDB API failed to respond for "{id}": {data["Error"]}')
+            raise Exception(data["Error"])
+
+        if data["Type"] != "movie":
+            self.logger.debug(
+                f'"{data["Title"]}" is not a movie, instead a {data["Type"]}'
+            )
+            return
+
+        try:
+            movie = Movie.objects.create(
+                imdb_id=id,
+                title=data["Title"],
+                year=int(data["Year"]),
+                language=data["Language"],
+                awards=data["Awards"],
+                poster=data["Poster"],
+                imdb_rating=float(data["imdbRating"])
+                if data["imdbRating"] != "N/A"
+                else None,
+                metascore=float(data["Metascore"])
+                if data["Metascore"] != "N/A"
+                else None,
+                on_watchlist=True,
+                in_store=False,
+            )
+            movie.genres.add(
+                *[
+                    Genre.objects.get_or_create(title=title.strip())[0].pk
+                    for title in data["Genre"].split(",")
+                ]
+            )
+        except Exception as e:
+            self.logger.error(f'Failed to create movie "{id}": {e}')
+            raise e
+
+        self.logger.info(f'Added "{movie.title}" successfully')
+
+    def fetch_movies(self, ids):
+        self.logger.info("Fetching data for each movie id")
+        already_exists = Movie.objects.filter(imdb_id__in=ids)
+        self.logger.info(f"{already_exists.count()} already exists.")
+        nonexistents = filter(
+            lambda i: i not in already_exists.values_list("imdb_id", flat=True), ids
+        )
+
+        with ThreadPoolExecutor(max_workers=100) as pool:
+            futures = [
+                pool.submit(partial(self.fetch_movie, id)) for id in nonexistents
+            ]
+
+        oks, errors = 0, 0
+        for future in as_completed(futures):
+            if future.exception():
+                errors += 1
+            else:
+                oks += 1
+
+        self.logger.info(f"{oks} tasks completed successfully out of {len(futures)}")
+        if errors > 0:
+            self.logger.error(f"{errors} tasks failed to complete successfully")
+
     def handle(self, *args, **options):
-        # TODO: Extract the list of movies
-        items = []
-        for i, item in enumerate(items):
-            print(f'[{i+1}/{len(items)}] "{item}"...', end=" ", flush=True)
-            # TODO: Get movie detail
-            print("Done")
+        self.handle_verbosity(options["verbosity"])
+
+        result = self.fetch_url(options["URL"])
+        ids = self.extract_movies_id(result)
+        self.fetch_movies(ids)
+        self.logger.info("Updated watchlist sucessfully")
