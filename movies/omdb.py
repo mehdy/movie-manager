@@ -13,6 +13,9 @@ def _call_api(params):
     if data["Response"] != "True":
         raise Exception(data["Error"])
 
+    if data["Type"] != "movie":
+        raise Exception(f'{data["Title"]} is not a movie.')
+
     return data
 
 

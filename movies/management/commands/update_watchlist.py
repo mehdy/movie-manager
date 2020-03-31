@@ -51,7 +51,11 @@ class Command(BaseCommand):
         except Movie.DoesNotExist:
             pass
 
-        data = fetch_movie_by_id(id)
+        try:
+            data = fetch_movie_by_id(id)
+        except Exception as e:
+            self.logger.error(f'Failed to fetch "{id}": {e}')
+            return
 
         try:
             movie = Movie.objects.create(
