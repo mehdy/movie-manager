@@ -2,14 +2,13 @@ import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
 from functools import partial
 
 import requests
-from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from movies.models import Genre, Movie
+from movies.omdb import fetch_movie_by_id
 
 
 class Command(BaseCommand):
@@ -43,23 +42,16 @@ class Command(BaseCommand):
 
     def fetch_movie(self, id):
         self.logger.info(f"Fetching movie {id}...")
-        resp = requests.get(
-            settings.OMDB_API_URL, params={"apikey": settings.OMDB_API_KEY, "i": id}
-        )
-        self.logger.debug(f'GET "{id}" status code: {resp.status_code}')
-        self.logger.debug(f"response body: {resp.json()}")
-        resp.raise_for_status()
-        data = resp.json()
-
-        if data["Response"] != "True":
-            self.logger.error(f'OMDB API failed to respond for "{id}": {data["Error"]}')
-            raise Exception(data["Error"])
-
-        if data["Type"] != "movie":
-            self.logger.debug(
-                f'"{data["Title"]}" is not a movie, instead a {data["Type"]}'
-            )
+        try:
+            movie = Movie.objects.get(imdb_id=id)
+            movie.on_watchlist = True
+            movie.save()
+            self.logger.info(f'Marked "{movie.title}" on watchlist')
             return
+        except Movie.DoesNotExist:
+            pass
+
+        data = fetch_movie_by_id(id)
 
         try:
             movie = Movie.objects.create(
@@ -92,7 +84,7 @@ class Command(BaseCommand):
 
     def fetch_movies(self, ids):
         self.logger.info("Fetching data for each movie id")
-        already_exists = Movie.objects.filter(imdb_id__in=ids)
+        already_exists = Movie.objects.filter(imdb_id__in=ids, on_watchlist=True)
         self.logger.info(f"{already_exists.count()} already exists.")
         nonexistents = filter(
             lambda i: i not in already_exists.values_list("imdb_id", flat=True), ids
