@@ -30,7 +30,7 @@ DEBUG = get_env("DEBUG", "true").lower() == "true"
 
 DOMAIN = get_env("DOMAIN", "")
 
-ALLOWED_HOSTS = [] if DEBUG else [DOMAIN]
+ALLOWED_HOSTS = ["*"] if DEBUG else [DOMAIN]
 
 
 # Application definition
