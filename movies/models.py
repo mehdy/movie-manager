@@ -15,6 +15,7 @@ class Movie(Model):
     imdb_id = models.CharField(_("IMDB ID"), max_length=150, unique=True)
     title = models.CharField(_("Title"), max_length=150)
     year = models.IntegerField(_("Year"))
+    runtime = models.IntegerField(_("Runtime (min)"))
     language = models.CharField(_("Title"), max_length=150)
     awards = models.TextField(_("Awards"))
     poster = models.URLField(_("Poster"))

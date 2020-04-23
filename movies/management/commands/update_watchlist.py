@@ -57,11 +57,18 @@ class Command(BaseCommand):
             self.logger.error(f'Failed to fetch "{id}": {e}')
             return
 
+        runtime = -1
+        try:
+            runtime = int(data["Runtime"].split()[0])
+        except Exception:
+            pass
+
         try:
             movie = Movie.objects.create(
                 imdb_id=id,
                 title=data["Title"],
                 year=int(data["Year"]),
+                runtime=runtime,
                 language=data["Language"],
                 awards=data["Awards"],
                 poster=data["Poster"],

@@ -1,7 +1,7 @@
 import logging
 import os
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 from movies.models import Genre, Movie
 from movies.omdb import fetch_movie_by_title
@@ -32,11 +32,18 @@ class Command(BaseCommand):
         except Movie.DoesNotExist:
             pass
 
+        runtime = -1
+        try:
+            runtime = int(data["Runtime"].split()[0])
+        except Exception:
+            pass
+
         try:
             movie = Movie.objects.create(
                 imdb_id=data["imdbID"],
                 title=data["Title"],
                 year=int(data["Year"]),
+                runtime=runtime,
                 language=data["Language"],
                 awards=data["Awards"],
                 poster=data["Poster"],
