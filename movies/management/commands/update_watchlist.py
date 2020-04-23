@@ -94,7 +94,7 @@ class Command(BaseCommand):
             lambda i: i not in already_exists.values_list("imdb_id", flat=True), ids
         )
 
-        with ThreadPoolExecutor(max_workers=100) as pool:
+        with ThreadPoolExecutor(max_workers=32) as pool:
             futures = [
                 pool.submit(partial(self.fetch_movie, id)) for id in nonexistents
             ]
