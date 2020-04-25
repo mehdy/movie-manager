@@ -1,5 +1,7 @@
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
 
 from django.core.management.base import BaseCommand
 
@@ -68,16 +70,30 @@ class Command(BaseCommand):
 
         self.logger.info(f'Added "{movie.title}" successfully')
 
+    def fetch_movie(self, name):
+        sname = self.searchable_name(name)
+        self.logger.debug(f'Fetching "{sname}"...')
+        try:
+            data = fetch_movie_by_title(sname)
+        except Exception as e:
+            self.logger.error(f'Failed to fetch "{sname}": {e}')
+            return
+        self.update_movie(data)
+
     def fetch_movies(self, names):
-        for i, name in enumerate(names):
-            sname = self.searchable_name(name)
-            self.logger.debug(f'[{i+1}/{len(names)}] Fetching "{sname}"...')
-            try:
-                data = fetch_movie_by_title(sname)
-            except Exception as e:
-                self.logger.error(f'Failed to fetch "{sname}": {e}')
-                continue
-            self.update_movie(data)
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            futures = [pool.submit(partial(self.fetch_movie, name)) for name in names]
+
+        oks, errors = 0, 0
+        for future in as_completed(futures):
+            if future.exception():
+                errors += 1
+            else:
+                oks += 1
+
+        self.logger.info(f"{oks} tasks completed successfully out of {len(futures)}")
+        if errors > 0:
+            self.logger.error(f"{errors} tasks failed to complete successfully")
 
     def handle(self, *args, **options):
         self.handle_verbosity(options["verbosity"])
