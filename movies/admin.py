@@ -6,8 +6,14 @@ from mymdb.admin import Admin
 from .models import Genre, Movie
 
 
+@admin.action(description="Mark selected movies in store")
+def set_in_store(modeladmin, request, queryset):
+    queryset.update(in_store=True)
+
+
 @admin.register(Movie)
 class MovieAdmin(Admin):
+    actions = (set_in_store,)
     readonly_fields = ("id", "image", "created_at", "updated_at")
     fieldsets = (
         (
