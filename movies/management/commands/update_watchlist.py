@@ -6,9 +6,9 @@ from functools import partial
 
 import requests
 from django.core.management.base import BaseCommand
+from imdb import IMDb
 
 from movies.models import Genre, Movie
-from movies.omdb import fetch_movie_by_id
 
 
 class Command(BaseCommand):
@@ -20,8 +20,11 @@ class Command(BaseCommand):
     def handle_verbosity(self, v):
         self.logger = logging.getLogger(__name__)
         level = [logging.FATAL, logging.ERROR, logging.INFO, logging.DEBUG][v]
-        logging.basicConfig(level=level)
         self.logger.setLevel(level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter())
+        self.logger.addHandler(handler)
+        self.logger.info("Starting...")
 
     def fetch_url(self, url):
         self.logger.info(f'Fetching data from "{url}..."')
@@ -52,39 +55,36 @@ class Command(BaseCommand):
             pass
 
         try:
-            data = fetch_movie_by_id(id)
+            data = self.imdb.get_movie(id[2:], info=["main", "critic_reviews"])
+            if data["kind"] != "movie":
+                raise Exception(f'{data["title"]} is not a movie.')
         except Exception as e:
             self.logger.error(f'Failed to fetch "{id}": {e}')
             return
 
         runtime = -1
         try:
-            runtime = int(data["Runtime"].split()[0])
+            runtime = int(data["runtimes"][0])
         except Exception:
             pass
 
         try:
             movie = Movie.objects.create(
                 imdb_id=id,
-                title=data["Title"],
-                year=int(data["Year"]),
+                title=data["title"],
+                year=data["year"],
                 runtime=runtime,
-                language=data["Language"],
-                awards=data["Awards"],
-                poster=data["Poster"],
-                imdb_rating=float(data["imdbRating"])
-                if data["imdbRating"] != "N/A"
-                else None,
-                metascore=float(data["Metascore"])
-                if data["Metascore"] != "N/A"
-                else None,
+                language=", ".join(data.get("languages", [])),
+                poster=data["cover url"],
+                imdb_rating=data.get("rating", -1),
+                metascore=float(data.get("metascore", -1)),
                 on_watchlist=True,
                 in_store=False,
             )
             movie.genres.add(
                 *[
                     Genre.objects.get_or_create(title=title.strip())[0].pk
-                    for title in data["Genre"].split(",")
+                    for title in data["genres"]
                 ]
             )
         except Exception as e:
@@ -119,6 +119,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.handle_verbosity(options["verbosity"])
+
+        self.imdb = IMDb()
 
         result = self.fetch_url(options["URL"])
         ids = self.extract_movies_id(result)
